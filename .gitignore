@@ -1,0 +1,17 @@
+pyvenv.cfg
+Include/
+bin/*
+!bin/run_debug.sh
+!bin/run_train.sh
+lib/
+*.md
+!Project_Plan.md
+!REAMD.md
+lib64
+share/
+markdown/
+*.bin
+__pycache__
+
+# 임시
+test_yaml.py
