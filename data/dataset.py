@@ -27,21 +27,11 @@ class Dataset(Dataset):
         return self.num_samples
 
 
-def get_dataloader(batch_size, seq_len=1024, split="train"):
+def get_dataloader(batch_size, seq_len=1024, split="train", shuffle=True):
     assert split in ["train", "val"], "split 인자는 train, val 값만을 가질 수 있음."
     path = os.path.join(os.path.dirname(__file__), f"{split}.bin")
     load_tokens = np.memmap(path, dtype=np.uint16, mode="r")
     dataset = Dataset(load_tokens, seq_len)
-    dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-    )
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
     return dataloader
-
-
-if __name__ == "__main__":
-    dataloader = get_dataloader(100, split="train")
-    for x_batch, y_batch in dataloader:
-        print(x_batch.shape, x_batch.dtype, y_batch.shape, y_batch.dtype)
-        break
