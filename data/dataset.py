@@ -7,42 +7,30 @@ from torch.utils.data import Dataset, DataLoader
 
 class Dataset(Dataset):
     def __init__(self, x, seq_len=1024):
-        self.x = (
-            x if isinstance(x, torch.Tensor) else torch.tensor(x, dtype=torch.int64)
-        )  # 임베딩에서는 int16 지원 안 함
-        self.num_samples = (len(self.x) - 1) // seq_len
-        self.src = self.x[: self.num_samples * seq_len].reshape(
+        self.num_samples = (len(x) - 1) // seq_len
+        self.src = x[: self.num_samples * seq_len].reshape(
             self.num_samples, seq_len
         )  # (샘플수, seq_len)
 
-        self.trg = self.x[1 : self.num_samples * seq_len + 1].reshape(
+        self.trg = x[1 : self.num_samples * seq_len + 1].reshape(
             self.num_samples, seq_len
         )
 
     def __getitem__(self, idx):
-        x = self.src[idx]
-        y = self.trg[idx]
+        # 임베딩에서는 int16 지원 안 함 ->  int64로 변환
+        # astype은 새로운 메모리 할당이 발생하기 때문에
+        x = self.src[idx].astype(np.int64)
+        y = self.trg[idx].astype(np.int64)
         return x, y
 
     def __len__(self):
         return self.num_samples
 
 
-# class TokenEmbedding(torch.nn.Module):
-#     def __init__(self, vocab_size, d_model):
-#         super().__init__()
-#         self.emb = torch.nn.Embedding(vocab_size, d_model)
-
-#     def forward(self, id):
-#         return self.emb(id)
-
-
 def get_dataloader(batch_size, seq_len=1024, split="train"):
     assert split in ["train", "val"], "split 인자는 train, val 값만을 가질 수 있음."
     path = os.path.join(os.path.dirname(__file__), f"{split}.bin")
-    load_tokens = np.memmap(path, dtype=np.uint16, mode="r").astype(
-        np.int64
-    )  # 저장시 uint16으로 용량줄이고 로드할 때는 임베딩을 위해 int64로 변환
+    load_tokens = np.memmap(path, dtype=np.uint16, mode="r")
     dataset = Dataset(load_tokens, seq_len)
     dataloader = DataLoader(
         dataset,
@@ -50,3 +38,10 @@ def get_dataloader(batch_size, seq_len=1024, split="train"):
     )
 
     return dataloader
+
+
+if __name__ == "__main__":
+    dataloader = get_dataloader(100, split="train")
+    for x_batch, y_batch in dataloader:
+        print(x_batch.shape, x_batch.dtype, y_batch.shape, y_batch.dtype)
+        break
