@@ -32,6 +32,8 @@ def get_dataloader(batch_size, seq_len=1024, split="train", shuffle=True):
     path = os.path.join(os.path.dirname(__file__), f"{split}.bin")
     load_tokens = np.memmap(path, dtype=np.uint16, mode="r")
     dataset = Dataset(load_tokens, seq_len)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    dataloader = DataLoader(
+        dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True
+    )
 
     return dataloader
