@@ -1,0 +1,21 @@
+env:
+  seed: 42
+
+model:
+  name: GPT2-medium-RoPE
+  vocab_size: 50257
+
+train:
+  optimizer: adamw
+  seq_length: 1024
+  hidden_size: 4096
+  learning_rate: 0.0003
+  num_heads: 16
+  num_layers: 24
+  dropout_rate: 0.1
+  weight_decay: 0.1
+  grad_clip: 1.0
+
+data:
+  train_path: ./data/train.bin
+  val_path: ./data/val.bin

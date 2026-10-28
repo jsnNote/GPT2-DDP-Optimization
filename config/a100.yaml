@@ -1,0 +1,26 @@
+a100_baseline:
+  optimizer_steps: 1000
+  gradient_checkpointing: false
+  precision: bf16
+  global_batch_size: 64
+  gpu_count: 1
+  micro_batch_size: 16
+  gradient_accumulation_steps: 4
+
+a100_checkpoint:
+  optimizer_steps: 1000
+  gradient_checkpointing: true
+  precision: bf16
+  global_batch_size: 64
+  gpu_count: 1
+  micro_batch_size: 16
+  gradient_accumulation_steps: 4
+
+a100_ddp2:
+  optimizer_steps: 1000
+  gradient_checkpointing: true
+  precision: bf16
+  global_batch_size: 64
+  gpu_count: 2
+  micro_batch_size: 16
+  gradient_accumulation_steps: 2
