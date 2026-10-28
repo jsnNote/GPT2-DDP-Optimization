@@ -119,55 +119,16 @@ class GPT2_RoPE(nn.Module):
     def forward(self, x, mask=False):
         x = self.wte(x)
         for layer in self.layers:
-            if self.gradient_checkpointing and self.training and torch.is_grad_enabled():
+            if (
+                self.gradient_checkpointing
+                and self.training
+                and torch.is_grad_enabled()
+            ):
                 x = checkpoint(layer, x, mask, use_reentrant=False)
             else:
-                
+
                 x = layer(x, mask)
-                
+
         x_norm = self.ln_f(x)
         logits = self.lm_head(x_norm)
         return logits
-
-
-torch.manual_seed(42)
-dummy_src = torch.randint(0, 50257, size=(1, 1025))
-dummy_trg = dummy_src[..., 1:]
-
-model = GPT2_RoPE(
-    vocab_size=50257,
-    d_model=1024,
-    h=16,
-    d_ff=(1024 * 4),
-    num_layers=24,
-    max_seq_len=1024,
-)
-# print(torch.numeal(model.parameters()))
-with torch.no_grad():
-    output = model(dummy_src[..., :1024], mask=True)
-
-import numpy as np
-
-print(
-    np.unique(
-        (torch.argmax(torch.softmax(output, dim=2), dim=2) == dummy_trg),
-        return_counts=True,
-    )[1] # crossentropy를 사용할 수 있음.
-)
-# 출력 decoding
-"""
-import tiktoken
-
-base = tiktoken.get_encoding("gpt2")
-print(
-    base.decode(
-        torch.argmax(torch.softmax(output, dim=2), dim=2)[:10].squeeze(dim=0).tolist()
-    )
-)
-"""
-"""print(f"parameters: {sum([p.numel() for p in model.parameters()])/1e6:.2f}M")
-
-
-from torchinfo import summary
-
-summary(model, input_data=dummy_trg, dtypes=[torch.int64])"""
