@@ -41,4 +41,4 @@ def get_dataloader(
         dataset, batch_size=batch_size, sampler=sampler, shuffle=False, drop_last=True
     )
 
-    return dataloader
+    return sampler, dataloader
