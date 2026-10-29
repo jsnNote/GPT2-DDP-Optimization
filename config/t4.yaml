@@ -1,7 +1,7 @@
 t4_debug:
   optimizer_steps: 300
   gradient_checkpointing: false
-  precision: fp32
+  precision: fp16
   global_batch_size: 64
   gpu_count: 1
   micro_batch_size: 2
