@@ -8,7 +8,8 @@ model:
 train:
   optimizer: adamw
   seq_length: 1024
-  hidden_size: 4096
+  d_model: 1024
+  d_ff: 4096
   learning_rate: 0.0003
   num_heads: 16
   num_layers: 24
