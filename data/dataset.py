@@ -2,7 +2,7 @@ import numpy as np
 import os
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, DistributedSampler
 
 
 class Dataset(Dataset):
@@ -27,13 +27,18 @@ class Dataset(Dataset):
         return self.num_samples
 
 
-def get_dataloader(batch_size, seq_len=1024, split="train", shuffle=True):
+def get_dataloader(
+    batch_size, world_size, rank, seq_len=1024, split="train", shuffle=True, seed=42
+):
     assert split in ["train", "val"], "split 인자는 train, val 값만을 가질 수 있음."
     path = os.path.join(os.path.dirname(__file__), f"{split}.bin")
     load_tokens = np.memmap(path, dtype=np.uint16, mode="r")
     dataset = Dataset(load_tokens, seq_len)
+    sampler = DistributedSampler(
+        dataset=dataset, num_replicas=world_size, rank=rank, shuffle=shuffle, seed=seed
+    )
     dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=shuffle, drop_last=True
+        dataset, batch_size=batch_size, sampler=sampler, shuffle=False, drop_last=True
     )
 
     return dataloader
