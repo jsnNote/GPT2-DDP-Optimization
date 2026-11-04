@@ -1,4 +1,5 @@
 import torch
+import torch.distributed as dist
 from datetime import datetime
 from collections import defaultdict
 import json
@@ -73,7 +74,7 @@ class TrainingMonitor:
         }
         self.log["gpu_memory"].append(record)
         self._pending_logs.append(record)
-        if flag:
+        if flag and dist.get_rank() == 0:
             tqdm.write(self._console_format.format(record))
 
     def log_loss(
@@ -109,7 +110,7 @@ class TrainingMonitor:
         self.log[f"{phase}_loss"].append(record)
         self._pending_logs.append(record)
 
-        if flag:
+        if flag and dist.get_rank() == 0:
             tqdm.write(self._console_format.format(record))
 
     def start_throughput(
@@ -153,7 +154,7 @@ class TrainingMonitor:
         self.log[f"throughput"].append(record)
         self._pending_logs.append(record)
 
-        if flag:
+        if flag and dist.get_rank() == 0:
             tqdm.write(self._console_format.format(record))
 
         self._throughput_start_time = None
