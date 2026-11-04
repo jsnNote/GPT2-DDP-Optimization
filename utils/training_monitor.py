@@ -5,6 +5,10 @@ from collections import defaultdict
 import json
 import time
 from tqdm import tqdm
+import os
+
+local_rank = int(os.environ["LOCAL_RANK"])
+torch.cuda.set_device(local_rank)
 
 
 class ConsoleFormatter:
@@ -171,29 +175,3 @@ class TrainingMonitor:
             f.flush()
             self._pending_logs.clear()
         print(f"[TrainingMonitor] {path}에 저장 완료")
-
-
-monitor = TrainingMonitor()
-
-monitor.log_gpu_memory(0, "train", "after_forward", 4, 128, flag=True)
-monitor.start_throughput()
-monitor.log_gpu_memory(0, "train", "after_forward", 4, 128, flag=True)
-monitor.log_gpu_memory(0, "train", "after_forward", 4, 128, flag=True)
-monitor.log_gpu_memory(0, "train", "after_forward", 4, 128, flag=True)
-monitor.log_gpu_memory(0, "train", "after_forward", 4, 128, flag=True)
-monitor.log_gpu_memory(0, "train", "after_forward", 4, 128, flag=True)
-import time
-
-time.sleep(10)
-monitor.log_throughput(
-    0,
-    1000,
-    "train",
-    "after_optimizer_step",
-    optimizer_step=4,
-    micro_step=128,
-    flag=True,
-)
-monitor.log_gpu_memory(0, "train", "after_forward", 4, 128, flag=True)
-monitor.log_loss(0, torch.tensor(81.5), "train", "after_forward", 4, 128, flag=True)
-monitor.save_log()
