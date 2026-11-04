@@ -3,6 +3,7 @@ from datetime import datetime
 from collections import defaultdict
 import json
 import time
+from tqdm import tqdm
 
 
 class ConsoleFormatter:
@@ -73,10 +74,7 @@ class TrainingMonitor:
         self.log["gpu_memory"].append(record)
         self._pending_logs.append(record)
         if flag:
-            print(
-                self._console_format.format(record),
-                flush=True,
-            )
+            tqdm.write(self._console_format.format(record))
 
     def log_loss(
         self,
@@ -112,10 +110,7 @@ class TrainingMonitor:
         self._pending_logs.append(record)
 
         if flag:
-            print(
-                self._console_format.format(record),
-                flush=True,
-            )
+            tqdm.write(self._console_format.format(record))
 
     def start_throughput(
         self,
@@ -159,10 +154,7 @@ class TrainingMonitor:
         self._pending_logs.append(record)
 
         if flag:
-            print(
-                self._console_format.format(record),
-                flush=True,
-            )
+            tqdm.write(self._console_format.format(record))
 
         self._throughput_start_time = None
 
