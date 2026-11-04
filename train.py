@@ -147,7 +147,7 @@ for step in progress:
         train_iter = iter(train_dataloader)
         x_batch, y_batch = next(train_iter)
 
-    update_now = (step + 1) % accumulation_steps == 0
+    update_now = step % accumulation_steps == 0
     # ddp인데 optimizer_step이 아니면 동기화하지 않음. optimizer_step이면 각 GPU에서 계산한 gradient를 통신해 평균내고, 모든 GPU가 같은 gradient를 갖도록 동기화하는 것
     sync_contex = model.no_sync() if is_ddp and not update_now else nullcontext()
     x_batch, y_batch = x_batch.to(device), y_batch.to(device)
@@ -181,6 +181,7 @@ for step in progress:
             micro_step=step,
             flag=flag,
         )
+        token_count = 0
 
         train_loss_tensor = torch.tensor(
             train_loss_sum, dtype=torch.float32, device=device
