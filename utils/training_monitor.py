@@ -68,12 +68,9 @@ class TrainingMonitor:
             "micro_step": micro_step,
             "unit": "MiB",
             "value": {
-                # "allocated": torch.cuda.memory_allocated(device) / mib,
-                # "reserved": torch.cuda.memory_reserved(device) / mib,
-                # "peak_allocated": torch.cuda.max_memory_allocated(device) / mib,
-                "allocated": 10 / mib,
-                "reserved": 20 / mib,
-                "peak_allocated": 30 / mib,
+                "allocated": torch.cuda.memory_allocated(device) / mib,
+                "reserved": torch.cuda.memory_reserved(device) / mib,
+                "peak_allocated": torch.cuda.max_memory_allocated(device) / mib,
             },
         }
         self.log["gpu_memory"].append(record)
@@ -107,9 +104,7 @@ class TrainingMonitor:
             "optimizer_step": optimizer_step,
             "micro_step": micro_step,
             "unit": None,
-            "value": {
-                "loss": loss.item(),
-            },
+            "value": {"loss": loss},
         }
         self.log[f"{phase}_loss"].append(record)
         self._pending_logs.append(record)
@@ -137,7 +132,7 @@ class TrainingMonitor:
             if torch.cuda.is_available()
             else "cpu"
         )
-        # torch.cuda.synchronize()
+        torch.cuda.synchronize()
         duration = time.perf_counter() - self._throughput_start_time
         TPS = token_count / duration
         record = {
