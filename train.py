@@ -1,6 +1,7 @@
 from data import get_dataloader
 from utils.load import load_yaml
 from utils.parse_arg import parse_argument
+from utils.training_monitor import TrainingMonitor
 from model import GPT2_RoPE
 import torch
 import torch.optim as optim
@@ -12,6 +13,7 @@ import os
 import random
 import numpy as np
 from contextlib import nullcontext
+from tqdm import tqdm
 
 
 def set_seed(seed):
@@ -26,8 +28,8 @@ torch.cuda.set_device(local_rank)
 device_str = "cuda" if torch.cuda.is_available() else "cpu"
 device = torch.device("cuda", local_rank)
 dist.init_process_group(backend="nccl")
-rank = dist.get_rank()  # 현재 GPU의 번호
-world_size = dist.get_world_size()  # 총 GPU 수
+rank = dist.get_rank()  # 전체 DDP 프로세스 중 현재 프로세스의 번호(global rank) 0
+world_size = dist.get_world_size()  # 전체 프로세스 수
 is_ddp = world_size > 1
 
 # 옵티마이저
@@ -65,9 +67,16 @@ weight_decay = base_config["train"]["weight_decay"]
 micro_batch_size = experiment_config["micro_batch_size"]
 precision = experiment_config["precision"]
 
+# 기본 설정
+phase = "train"
+flag = True
+
 # 실험 파라미터 설정
 optimizer_steps = experiment_config["optimizer_steps"]
 accumulation_steps = experiment_config["gradient_accumulation_steps"]
+
+# 모니터링용 객체 생성
+monitor = TrainingMonitor()
 
 # Dataloader 생성
 train_sampler, train_dataloader = get_dataloader(
@@ -121,7 +130,13 @@ scaler = torch.amp.GradScaler(
     "cuda",
     enabled=(precision == "fp16"),
 )
-for step in range(micro_steps):
+token_count = 0
+progress = (
+    tqdm(range(1, (micro_steps + 1)), desc="진행률: ")
+    if dist.get_rank() == 0
+    else range(1, (micro_steps + 1))
+)
+for step in progress:
     try:
         x_batch, y_batch = next(train_iter)
     except StopIteration as e:
@@ -138,8 +153,11 @@ for step in range(micro_steps):
     x_batch, y_batch = x_batch.to(device), y_batch.to(device)
     with sync_contex:
         with autocast(device_type="cuda", dtype=DTYPE[precision]):
+            monitor.start_throughput()
             logits = model(x_batch, mask=True)
             loss = loss_fn(logits.reshape(-1, logits.size(-1)), y_batch.reshape(-1))
+            B, S, _ = logits.shape
+            token_count += B * S
             # 그래프가 누적되기 때문에 값만 누적하기 위해서 item을 사용
             train_loss_sum += loss.detach().item()
         scaler.scale(loss / accumulation_steps).backward()
@@ -152,6 +170,17 @@ for step in range(micro_steps):
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
+        optimizer_step += 1
+
+        monitor.log_throughput(
+            rank=rank,
+            token_count=token_count,
+            phase=phase,
+            stage="after_optimizer_step",
+            optimizer_step=optimizer_step,
+            micro_step=step,
+            flag=flag,
+        )
 
         train_loss_tensor = torch.tensor(
             train_loss_sum, dtype=torch.float32, device=device
@@ -165,13 +194,21 @@ for step in range(micro_steps):
                 op=torch.distributed.ReduceOp.SUM,
             )
 
-        if rank == 0:
+        if dist.get_rank() == 0:
             avg_train_loss = (
                 train_loss_tensor / (accumulation_steps * world_size)
             ).item()
             train_losses.append(avg_train_loss)
+            monitor.log_loss(
+                rank=rank,
+                loss=avg_train_loss,
+                phase=phase,
+                stage="calculate average train loss",
+                optimizer_step=optimizer_step,
+                micro_step=step,
+                flag=flag,
+            )
         train_loss_sum = 0.0
-        optimizer_step += 1
 
         if optimizer_step % eval_interval == 0:
             model.eval()
@@ -186,7 +223,7 @@ for step in range(micro_steps):
                             logits.reshape(-1, logits.size(-1)), y_batch.reshape(-1)
                         )
                         val_loss_sum += loss.item()
-                batch_count += 1
+                        batch_count += 1
 
             val_loss_tensor = torch.tensor(
                 val_loss_sum / batch_count, dtype=torch.float32, device=device
@@ -196,10 +233,20 @@ for step in range(micro_steps):
                     val_loss_tensor,
                     op=torch.distributed.ReduceOp.SUM,
                 )
-            if rank == 0:
+            if dist.get_rank() == 0:
                 avg_val_loss = (val_loss_tensor / world_size).item()
                 val_losses.append(avg_val_loss)
+                monitor.log_loss(
+                    rank=rank,
+                    loss=avg_val_loss,
+                    phase=phase,
+                    stage="calculate average validation loss",
+                    optimizer_step=optimizer_step,
+                    micro_step=step,
+                    flag=flag,
+                )
             model.train()
 
 
 dist.destroy_process_group()
+monitor.save_log()
