@@ -131,6 +131,7 @@ scaler = torch.amp.GradScaler(
     enabled=(precision == "fp16"),
 )
 token_count = 0
+monitor.start_throughput()
 progress = (
     tqdm(range(1, (micro_steps + 1)), desc="진행률: ")
     if dist.get_rank() == 0
@@ -153,7 +154,7 @@ for step in progress:
     x_batch, y_batch = x_batch.to(device), y_batch.to(device)
     with sync_contex:
         with autocast(device_type="cuda", dtype=DTYPE[precision]):
-            monitor.start_throughput()
+
             logits = model(x_batch, mask=True)
             loss = loss_fn(logits.reshape(-1, logits.size(-1)), y_batch.reshape(-1))
             B, S, _ = logits.shape
@@ -182,7 +183,7 @@ for step in progress:
             flag=flag,
         )
         token_count = 0
-
+        monitor.start_throughput()
         train_loss_tensor = torch.tensor(
             train_loss_sum, dtype=torch.float32, device=device
         )

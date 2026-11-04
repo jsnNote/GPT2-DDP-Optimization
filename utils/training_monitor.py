@@ -115,6 +115,7 @@ class TrainingMonitor:
     def start_throughput(
         self,
     ):
+        torch.cuda.synchronize()
         self._throughput_start_time = time.perf_counter()
 
     def log_throughput(
