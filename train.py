@@ -158,7 +158,8 @@ for step in progress:
             logits = model(x_batch, mask=True)
             loss = loss_fn(logits.reshape(-1, logits.size(-1)), y_batch.reshape(-1))
             B, S, _ = logits.shape
-            token_count += B * S
+            monitor.add_tokens(B * S)
+
             # 그래프가 누적되기 때문에 값만 누적하기 위해서 item을 사용
             train_loss_sum += loss.detach().item()
         scaler.scale(loss / accumulation_steps).backward()
@@ -175,15 +176,12 @@ for step in progress:
 
         monitor.log_throughput(
             rank=rank,
-            token_count=token_count,
             phase=phase,
             stage="after_optimizer_step",
             optimizer_step=optimizer_step,
             micro_step=step,
             flag=flag,
         )
-        token_count = 0
-        monitor.start_throughput()
         train_loss_tensor = torch.tensor(
             train_loss_sum, dtype=torch.float32, device=device
         )
@@ -248,7 +246,6 @@ for step in progress:
                     flag=flag,
                 )
             model.train()
-
+        monitor.start_throughput()
 
 dist.destroy_process_group()
-monitor.save_log()

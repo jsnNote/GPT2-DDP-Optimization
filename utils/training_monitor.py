@@ -36,6 +36,7 @@ class TrainingMonitor:
         self._throughput_start_time = None
         self._console_format = ConsoleFormatter()
         self._pending_logs = []
+        self._token_count = 0
 
     def __get_time(self):
         now = datetime.now()
@@ -118,10 +119,12 @@ class TrainingMonitor:
         torch.cuda.synchronize()
         self._throughput_start_time = time.perf_counter()
 
+    def add_tokens(self, count):
+        self._token_count += count
+
     def log_throughput(
         self,
         rank,
-        token_count,
         phase=None,
         stage=None,
         optimizer_step=None,
@@ -135,7 +138,7 @@ class TrainingMonitor:
         )
         torch.cuda.synchronize()
         duration = time.perf_counter() - self._throughput_start_time
-        TPS = token_count / duration
+        TPS = self._token_count / duration
         record = {
             "level": "INFO",
             "metric": "throughput",
@@ -158,6 +161,7 @@ class TrainingMonitor:
             tqdm.write(self._console_format.format(record))
 
         self._throughput_start_time = None
+        self._token_count = 0
 
     def save_log(self, path="log.jsonl"):
 
