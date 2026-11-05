@@ -14,12 +14,19 @@ import random
 import numpy as np
 from contextlib import nullcontext
 from tqdm import tqdm
+import wandb
 
 
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+
+# wandb 프로젝트 설정
+wandb_log = False
+wandb_project = "GPT2-DDP-Optimization"
+wandb_run_name = "GPT2-with-RoPE"
 
 
 # DDP 설정
@@ -66,17 +73,14 @@ grad_clip = base_config["train"]["grad_clip"]
 weight_decay = base_config["train"]["weight_decay"]
 micro_batch_size = experiment_config["micro_batch_size"]
 precision = experiment_config["precision"]
+dropout_rate = base_config["train"]["dropout_rate"]
 
 # 기본 설정
-phase = "train"
 flag = True
 
 # 실험 파라미터 설정
 optimizer_steps = experiment_config["optimizer_steps"]
 accumulation_steps = experiment_config["gradient_accumulation_steps"]
-
-# 모니터링용 객체 생성
-monitor = TrainingMonitor()
 
 # Dataloader 생성
 train_sampler, train_dataloader = get_dataloader(
@@ -123,7 +127,24 @@ if train_sampler is not None:
     train_sampler.set_epoch(epoch)
 
 train_iter = iter(train_dataloader)
-val_iter = iter(val_dataloader)
+
+if wandb_log and rank == 0:
+    run = wandb.init(
+        project=wandb_project,
+        config={
+            "model": wandb_run_name,
+            "learning_rate": lr,
+            "dropout_rate": dropout_rate,
+            "architecture": "GPT-2 with RoPE",
+            "dataset": "openwebtext",
+        },
+    )
+    wandb_config = wandb.config
+else:
+    run = None
+
+# 모니터링용 객체 생성
+monitor = TrainingMonitor(run)
 
 # T4에 FP16을 위한 스케일러(BF16에 대해서는 아무것도 안 함)
 scaler = torch.amp.GradScaler(
@@ -134,7 +155,7 @@ token_count = 0
 monitor.start_throughput()
 progress = (
     tqdm(range(1, (micro_steps + 1)), desc="진행률: ")
-    if dist.get_rank() == 0
+    if rank == 0
     else range(1, (micro_steps + 1))
 )
 for step in progress:
@@ -176,7 +197,7 @@ for step in progress:
 
         monitor.log_throughput(
             rank=rank,
-            phase=phase,
+            phase="train",
             stage="after_optimizer_step",
             optimizer_step=optimizer_step,
             micro_step=step,
@@ -194,7 +215,7 @@ for step in progress:
                 op=torch.distributed.ReduceOp.SUM,
             )
 
-        if dist.get_rank() == 0:
+        if rank == 0:
             avg_train_loss = (
                 train_loss_tensor / (accumulation_steps * world_size)
             ).item()
@@ -202,7 +223,7 @@ for step in progress:
             monitor.log_loss(
                 rank=rank,
                 loss=avg_train_loss,
-                phase=phase,
+                phase="train",
                 stage="calculate average train loss",
                 optimizer_step=optimizer_step,
                 micro_step=step,
@@ -233,13 +254,13 @@ for step in progress:
                     val_loss_tensor,
                     op=torch.distributed.ReduceOp.SUM,
                 )
-            if dist.get_rank() == 0:
+            if rank == 0:
                 avg_val_loss = (val_loss_tensor / world_size).item()
                 val_losses.append(avg_val_loss)
                 monitor.log_loss(
                     rank=rank,
                     loss=avg_val_loss,
-                    phase=phase,
+                    phase="validation",
                     stage="calculate average validation loss",
                     optimizer_step=optimizer_step,
                     micro_step=step,
@@ -247,5 +268,10 @@ for step in progress:
                 )
             model.train()
         monitor.start_throughput()
+        if run is not None and rank:
+            run.log({}, step=step, commit=True)
+
 
 dist.destroy_process_group()
+if run is not None and rank:
+    run.finish()

@@ -31,12 +31,13 @@ class ConsoleFormatter:
 
 
 class TrainingMonitor:
-    def __init__(self):
+    def __init__(self, run):
         self.log = defaultdict(list)
         self._throughput_start_time = None
         self._console_format = ConsoleFormatter()
         self._pending_logs = []
         self._token_count = 0
+        self._run = run
 
     def __get_time(self):
         now = datetime.now()
@@ -76,7 +77,14 @@ class TrainingMonitor:
         }
         self.log["gpu_memory"].append(record)
         self._pending_logs.append(record)
-        if flag and dist.get_rank() == 0:
+
+        if self._run is not None and rank == 0:
+            data = {}
+            for name, value in record["value"].items():
+                data[f"{phase}/{name}"] = value
+            self._run.log(data=data, step=micro_step)
+
+        if flag and rank == 0:
             tqdm.write(self._console_format.format(record))
 
     def log_loss(
@@ -110,7 +118,13 @@ class TrainingMonitor:
         self.log[f"{phase}_loss"].append(record)
         self._pending_logs.append(record)
 
-        if flag and dist.get_rank() == 0:
+        if self._run and rank == 0:
+            data = {}
+            for name, value in record["value"].items():
+                data[f"{phase}/{name}"] = value
+            self._run.log(data=data, step=micro_step, commit=False)
+
+        if flag and rank == 0:
             tqdm.write(self._console_format.format(record))
 
     def start_throughput(
@@ -151,17 +165,23 @@ class TrainingMonitor:
             "micro_step": micro_step,
             "unit": "token/sec",
             "value": {
-                "token_per_sec": TPS,
+                "TPS": TPS,
             },
         }
         self.log[f"throughput"].append(record)
         self._pending_logs.append(record)
 
-        if flag and dist.get_rank() == 0:
+        if self._run and rank == 0:
+            data = {}
+            for name, value in record["value"].items():
+                data[f"{phase}/{name}"] = value
+            self._run.log(data=data, step=micro_step)
+
+        if flag and rank == 0:
             tqdm.write(self._console_format.format(record))
 
-        self._throughput_start_time = None
         self._token_count = 0
+        self._throughput_start_time = None
 
     def save_log(self, path="log.jsonl"):
 
