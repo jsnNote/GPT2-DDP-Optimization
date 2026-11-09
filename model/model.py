@@ -112,6 +112,10 @@ class GPT2_RoPE(nn.Module):
         )
         self.ln_f = nn.LayerNorm(d_model)
         self.lm_head = nn.Linear(d_model, self.vocab_size, bias=False)
+        # GPT-2에서 적용한 가중치 초기화
+        nn.init.normal_(self.wte.weight, mean=0.0, std=0.02)
+
+        # Weight Tying
         self.lm_head.weight = self.wte.weight
         self.gradient_checkpointing = False
         self.training = True
