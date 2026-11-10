@@ -40,6 +40,7 @@ class MultiHeadAttention(nn.Module):
         self.W_Q = nn.Linear(d_model, d_model, bias=True)
         self.W_K = nn.Linear(d_model, d_model, bias=True)
         self.W_V = nn.Linear(d_model, d_model, bias=True)
+        # attention projection
         self.W_O = nn.Linear(d_model, d_model, bias=True)
 
         self.attention = ScaledDotProductAttention(max_seq_len)
@@ -81,13 +82,14 @@ class TransformerBlock(nn.Module):
     def __init__(self, d_model, h, d_ff, max_seq_len, dropout_rate=0.1):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
-        self.mmha = MultiHeadAttention(d_model, h, max_seq_len)
+        self.mha = MultiHeadAttention(d_model, h, max_seq_len)
         self.norm2 = nn.LayerNorm(d_model)
+        # ffn projection
         self.ffn = PointWiseFeedForward(d_model, d_ff, dropout_rate)
 
     def forward(self, x, mask=False):
         x_norm = self.norm1(x)
-        attention_output = self.mmha(x_norm, x_norm, x_norm, mask)
+        attention_output = self.mha(x_norm, x_norm, x_norm, mask)
         x = (
             attention_output + x
         )  # 계산한 값을 새로운 메모리에 저장하고 그것을 x 변수가 참조함
@@ -99,10 +101,19 @@ class TransformerBlock(nn.Module):
 
 class GPT2_RoPE(nn.Module):
     def __init__(
-        self, vocab_size, d_model, h, d_ff, num_layers, max_seq_len, dropout_rate=0.1
+        self,
+        vocab_size,
+        d_model,
+        h,
+        d_ff,
+        num_layers,
+        max_seq_len,
+        dropout_rate=0.1,
+        initializer_range=0.02,
     ):
         super().__init__()
         self.vocab_size = vocab_size
+        self.initializer_range = initializer_range
         self.wte = nn.Embedding(vocab_size, d_model)
         self.layers = nn.ModuleList(
             [
@@ -112,8 +123,20 @@ class GPT2_RoPE(nn.Module):
         )
         self.ln_f = nn.LayerNorm(d_model)
         self.lm_head = nn.Linear(d_model, self.vocab_size, bias=False)
+
         # GPT-2에서 적용한 가중치 초기화
-        nn.init.normal_(self.wte.weight, mean=0.0, std=0.02)
+        self.apply(self._init_weights)
+        for block in self.layers:
+            nn.init.normal(
+                block.ffn.linear2.weight,
+                mean=0,
+                std=self.initializer_range / (2 * len(self.layers)) ** 0.5,
+            )
+            nn.init.normal(
+                block.mha.W_O.weight,
+                mean=0,
+                std=self.initializer_range / (2 * len(self.layers)) ** 0.5,
+            )
 
         # Weight Tying
         self.lm_head.weight = self.wte.weight
@@ -136,3 +159,12 @@ class GPT2_RoPE(nn.Module):
         x_norm = self.ln_f(x)
         logits = self.lm_head(x_norm)
         return logits
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            nn.init.normal(module.weight, mean=0.0, std=self.initializer_range)
+        elif isinstance(module, nn.Embedding):
+            nn.init.normal(module.weight, mean=0.0, std=self.initializer_range)
+        elif isinstance(module, nn.LayerNorm):
+            nn.init.ones_(module.weight)
+            nn.init.zeros_(module.bias)
