@@ -127,12 +127,12 @@ class GPT2_RoPE(nn.Module):
         # GPT-2에서 적용한 가중치 초기화
         self.apply(self._init_weights)
         for block in self.layers:
-            nn.init.normal(
+            nn.init.normal_(
                 block.ffn.linear2.weight,
                 mean=0,
                 std=self.initializer_range / (2 * len(self.layers)) ** 0.5,
             )
-            nn.init.normal(
+            nn.init.normal_(
                 block.mha.W_O.weight,
                 mean=0,
                 std=self.initializer_range / (2 * len(self.layers)) ** 0.5,
@@ -162,9 +162,9 @@ class GPT2_RoPE(nn.Module):
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
-            nn.init.normal(module.weight, mean=0.0, std=self.initializer_range)
+            nn.init.normal_(module.weight, mean=0.0, std=self.initializer_range)
         elif isinstance(module, nn.Embedding):
-            nn.init.normal(module.weight, mean=0.0, std=self.initializer_range)
+            nn.init.normal_(module.weight, mean=0.0, std=self.initializer_range)
         elif isinstance(module, nn.LayerNorm):
             nn.init.ones_(module.weight)
             nn.init.zeros_(module.bias)
