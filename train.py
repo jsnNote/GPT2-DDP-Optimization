@@ -257,15 +257,18 @@ for step in progress:
             if rank == 0:
                 avg_val_loss = (val_loss_tensor / world_size).item()
                 val_losses.append(avg_val_loss)
+                parameters = {
+                    "rank": rank,
+                    "loss": avg_val_loss,
+                    "phase": "validation",
+                    "optimizer_step": optimizer_step,
+                    "micro_step": step,
+                    "flag": flag,
+                }
                 monitor.log_loss(
-                    rank=rank,
-                    loss=avg_val_loss,
-                    phase="validation",
-                    stage="calculate average validation loss",
-                    optimizer_step=optimizer_step,
-                    micro_step=step,
-                    flag=flag,
+                    **parameters, stage="calculate average validation loss"
                 )
+                monitor.log_perplexity(**parameters, stage="calculate perplexity")
             model.train()
         monitor.start_throughput()
         if run is not None and rank:

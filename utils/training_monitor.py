@@ -183,6 +183,50 @@ class TrainingMonitor:
         self._token_count = 0
         self._throughput_start_time = None
 
+    def log_perplexity(
+        self,
+        rank,
+        loss,
+        phase=None,
+        stage=None,
+        optimizer_step=None,
+        micro_step=None,
+        flag=False,
+    ):
+        device = (
+            f"cuda:{torch.cuda.current_device()}"
+            if torch.cuda.is_available()
+            else "cpu"
+        )
+        torch.cuda.synchronize()
+        PPL = torch.exp(torch.tensor(loss))
+        record = {
+            "level": "INFO",
+            "metric": "perplexity",
+            "time": self.__get_time(),
+            "phase": phase,
+            "stage": stage,
+            "rank": rank,
+            "device": device,
+            "optimizer_step": optimizer_step,
+            "micro_step": micro_step,
+            "unit": None,
+            "value": {
+                "perplexity": PPL.item(),
+            },
+        }
+        self.log[f"perplexity"].append(record)
+        self._pending_logs.append(record)
+
+        if self._run and rank == 0:
+            data = {}
+            for name, value in record["value"].items():
+                data[f"{phase}/{name}"] = value
+            self._run.log(data=data, step=micro_step)
+
+        if flag and rank == 0:
+            tqdm.write(self._console_format.format(record))
+
     def save_log(self, path="log.jsonl"):
 
         with open(path, "a", encoding="utf-8") as f:
