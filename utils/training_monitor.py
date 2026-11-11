@@ -137,6 +137,45 @@ class TrainingMonitor:
         if flag and rank == 0:
             tqdm.write(self._console_format.format(record))
 
+    def log_scale(
+        self,
+        rank,
+        scale,
+        phase=None,
+        stage=None,
+        optimizer_step=None,
+        micro_step=None,
+        flag=False,
+    ):
+        device = (
+            f"cuda:{torch.cuda.current_device()}"
+            if torch.cuda.is_available()
+            else "cpu"
+        )
+        record = {
+            "level": "INFO",
+            "metric": f"{phase}_loss",
+            "time": self.__get_time(),
+            "phase": phase,
+            "stage": stage,
+            "rank": rank,
+            "device": device,
+            "optimizer_step": optimizer_step,
+            "micro_step": micro_step,
+            "unit": None,
+            "value": {"scale": scale},
+        }
+        self.log[f"scale"].append(record)
+        self._pending_logs.append(record)
+
+        if self._run is not None and rank == 0:
+            data = {}
+            data[f"{phase}/AMP/scale"] = scale
+            self._run.log(data=data, step=micro_step, commit=False)
+
+        if flag and rank == 0:
+            tqdm.write(self._console_format.format(record))
+
     def log_loss(
         self,
         rank,

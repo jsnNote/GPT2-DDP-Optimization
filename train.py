@@ -76,7 +76,11 @@ precision = experiment_config["precision"]
 dropout_rate = base_config["train"]["dropout_rate"]
 
 # 기본 설정
-flag = True
+_, value = parse_argument("--flag")
+flag = value
+_, value = parse_argument("--enable-compile")
+enable_compile = value
+
 
 # 실험 파라미터 설정
 optimizer_steps = experiment_config["optimizer_steps"]
@@ -103,6 +107,9 @@ model = GPT2_RoPE(
 model.gradient_checkpointing = experiment_config["gradient_checkpointing"]
 if is_ddp:
     model = DDP(model, device_ids=[local_rank])
+
+if enable_compile:
+    model = torch.compile(model)
 
 # opmizer 생성
 optimizer = OPTIMIZERS[base_config["train"]["optimizer"]](
@@ -137,6 +144,7 @@ if wandb_log and rank == 0:
             "dropout_rate": dropout_rate,
             "architecture": "GPT-2 with RoPE",
             "dataset": "openwebtext",
+            "compile": enable_compile,
         },
     )
     wandb_config = wandb.config
@@ -184,6 +192,14 @@ for step in progress:
             # 그래프가 누적되기 때문에 값만 누적하기 위해서 item을 사용
             train_loss_sum += loss.detach().item()
         scaler.scale(loss / accumulation_steps).backward()
+        monitor.log_scale(
+            rank=rank,
+            scale=scaler.get_scale(),
+            phase="train",
+            stage="after backward",
+            optimizer_step=optimizer_step,
+            micro_step=step,
+        )
 
     # AMP 학습에서는 FP32 파라미터와 상태로 업데이트하므로 autocast가 필요없음
     if update_now:
