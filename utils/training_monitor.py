@@ -31,13 +31,14 @@ class ConsoleFormatter:
 
 
 class TrainingMonitor:
-    def __init__(self, run):
+    def __init__(self, run=None, is_ddp=False):
         self.log = defaultdict(list)
         self._throughput_start_time = None
         self._console_format = ConsoleFormatter()
         self._pending_logs = []
-        self._token_count = 0
+        self._local_tokens = 0
         self._run = run
+        self._is_ddp = is_ddp
 
     def __get_time(self):
         now = datetime.now()
@@ -58,6 +59,29 @@ class TrainingMonitor:
             else "cpu"
         )
         mib = 1024**2
+        world_size = dist.get_world_size()
+        local_utilization = torch.cuda.utilization(device) / mib
+        local_allocated = torch.cuda.memory_allocated(device) / mib
+        local_reserved = torch.cuda.memory_reserved(device) / mib
+        local_peak_allocated = torch.cuda.max_memory_allocated(device) / mib
+
+        local_metrics = torch.tensor(
+            [
+                local_utilization,
+                local_allocated,
+                local_reserved,
+                local_peak_allocated,
+            ],
+            dtype=torch.float64,
+            device=device,
+        )
+
+        gathered_metrics = [torch.zeros_like(local_metrics) for _ in range(world_size)]
+        if self._is_ddp:
+            dist.all_gather(gathered_metrics, local_metrics)
+        else:
+            gathered_metrics = [local_metrics]
+
         record = {
             "level": "INFO",
             "metric": "gpu_memory",
@@ -70,18 +94,38 @@ class TrainingMonitor:
             "micro_step": micro_step,
             "unit": "MiB",
             "value": {
-                "allocated": torch.cuda.memory_allocated(device) / mib,
-                "reserved": torch.cuda.memory_reserved(device) / mib,
-                "peak_allocated": torch.cuda.max_memory_allocated(device) / mib,
+                "utilization": local_utilization,
+                "allocated": local_allocated,
+                "reserved": local_reserved,
+                "peak_allocated": local_peak_allocated,
             },
         }
         self.log["gpu_memory"].append(record)
         self._pending_logs.append(record)
 
-        if self._run is not None and rank == 0:
-            data = {}
-            for name, value in record["value"].items():
-                data[f"{phase}/{name}"] = value
+        if rank == 0:
+            metrics = torch.stack(gathered_metrics)
+
+            # 열별 집계
+            global_utilization_mean = metrics[:, 0].mean().item()
+            global_allocated_max = metrics[:, 1].max().item()
+            global_reserved_max = metrics[:, 2].max().item()
+            global_peak_max = metrics[:, 3].max().item()
+
+            data = {
+                "gpu/utilization/mean": global_utilization_mean,
+                "gpu/memory_allocated/max": global_allocated_max,
+                "gpu/memory_reserved/max": global_reserved_max,
+                "gpu/memory_peak/max": global_peak_max,
+            }
+
+            # Rank별 기록
+            for r in range(world_size):
+                data[f"gpu/utilization/rank_{r}"] = metrics[r, 0].item()
+                data[f"gpu/memory_allocated/rank_{r}"] = metrics[r, 1].item()
+                data[f"gpu/memory_reserved/rank_{r}"] = metrics[r, 2].item()
+                data[f"gpu/memory_peak/rank_{r}"] = metrics[r, 3].item()
+
             self._run.log(data=data, step=micro_step)
 
         if flag and rank == 0:
@@ -118,10 +162,10 @@ class TrainingMonitor:
         self.log[f"{phase}_loss"].append(record)
         self._pending_logs.append(record)
 
-        if self._run and rank == 0:
+        if self._run is not None and rank == 0:
             data = {}
             for name, value in record["value"].items():
-                data[f"{phase}/{name}"] = value
+                data[f"{phase}/{name}/global"] = value
             self._run.log(data=data, step=micro_step, commit=False)
 
         if flag and rank == 0:
@@ -134,7 +178,7 @@ class TrainingMonitor:
         self._throughput_start_time = time.perf_counter()
 
     def add_tokens(self, count):
-        self._token_count += count
+        self._local_tokens += count
 
     def log_throughput(
         self,
@@ -151,8 +195,26 @@ class TrainingMonitor:
             else "cpu"
         )
         torch.cuda.synchronize()
-        duration = time.perf_counter() - self._throughput_start_time
-        TPS = self._token_count / duration
+        local_duration = time.perf_counter() - self._throughput_start_time
+        local_TPS = self._local_tokens / local_duration
+
+        # global TPS 측정을 위한 코드
+        tokens_tensor = torch.tensor(
+            self._local_tokens, dtype=torch.float64, device=device
+        )
+        duration_tensor = torch.tensor(
+            local_duration, dtype=torch.float64, device=device
+        )
+
+        if self._is_ddp:
+            dist.all_reduce(tokens_tensor, op=torch.distributed.ReduceOp.SUM)
+            dist.all_reduce(duration_tensor, op=torch.distributed.ReduceOp.MAX)
+
+            # local rank의 TPS 모으기
+            local_TPS_tensor = torch.tensor(device=device)
+            gathered_tps = dist.all_gather(local_TPS_tensor, local_TPS)
+        else:
+            gathered_tps = torch.tensor([local_TPS], device=device)
         record = {
             "level": "INFO",
             "metric": "throughput",
@@ -165,22 +227,27 @@ class TrainingMonitor:
             "micro_step": micro_step,
             "unit": "token/sec",
             "value": {
-                "TPS": TPS,
+                "TPS": local_TPS,
             },
         }
         self.log[f"throughput"].append(record)
         self._pending_logs.append(record)
 
-        if self._run and rank == 0:
+        if self._run is not None and rank == 0:
             data = {}
-            for name, value in record["value"].items():
-                data[f"{phase}/{name}"] = value
+            # local TPS
+            for r, tps in enumerate(gathered_tps):
+                data[f"{phase}/TPS/rank_{r}"] = tps.item()
+
+            # global TPS
+            if self._is_ddp:
+                data[f"{phase}/TPS/global"] = (tokens_tensor / duration_tensor).item()
             self._run.log(data=data, step=micro_step)
 
         if flag and rank == 0:
             tqdm.write(self._console_format.format(record))
 
-        self._token_count = 0
+        self._local_tokens = 0
         self._throughput_start_time = None
 
     def log_perplexity(
@@ -218,10 +285,10 @@ class TrainingMonitor:
         self.log[f"perplexity"].append(record)
         self._pending_logs.append(record)
 
-        if self._run and rank == 0:
+        if self._run is not None and rank == 0:
             data = {}
             for name, value in record["value"].items():
-                data[f"{phase}/{name}"] = value
+                data[f"{phase}/{name}/global"] = value
             self._run.log(data=data, step=micro_step)
 
         if flag and rank == 0:
