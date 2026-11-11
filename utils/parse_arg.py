@@ -37,6 +37,8 @@ mapping.update(
         "true": True,
         "False": False,
         "false": False,
+        "None": None,
+        "none": None,
     }
 )
 
@@ -47,6 +49,7 @@ def parse_argument(keyword):
         option, value = [arg for arg in arguments if keyword == arg.split("=")[0]][
             0
         ].split("=")
+        option, value = mapping[option], mapping[value]
     else:
         option, value = (None, False)
     return option, value
