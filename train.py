@@ -24,7 +24,7 @@ def set_seed(seed):
 
 
 # wandb 프로젝트 설정
-wandb_log = False
+_, wandb_log = parse_argument("--wandb-log")
 wandb_project = "GPT2-DDP-Optimization"
 wandb_run_name = "GPT2-with-RoPE"
 
@@ -76,10 +76,8 @@ precision = experiment_config["precision"]
 dropout_rate = base_config["train"]["dropout_rate"]
 
 # 기본 설정
-_, value = parse_argument("--flag")
-flag = value
-_, value = parse_argument("--enable-compile")
-enable_compile = value
+_, flag = parse_argument("--flag")
+_, enable_compile = parse_argument("--enable-compile")
 
 
 # 실험 파라미터 설정
@@ -291,6 +289,7 @@ for step in progress:
             run.log({}, step=step, commit=True)
 
 
-dist.destroy_process_group()
+if is_ddp:
+    dist.destroy_process_group()
 if run is not None and rank:
     run.finish()
