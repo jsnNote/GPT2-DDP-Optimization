@@ -120,11 +120,17 @@ class TrainingMonitor:
             }
 
             # Rank별 기록
-            for r in range(world_size):
-                data[f"gpu/utilization/rank_{r}"] = metrics[r, 0].item()
-                data[f"gpu/memory_allocated/rank_{r}"] = metrics[r, 1].item()
-                data[f"gpu/memory_reserved/rank_{r}"] = metrics[r, 2].item()
-                data[f"gpu/memory_peak/rank_{r}"] = metrics[r, 3].item()
+            if self.is_ddp:
+                for r in range(world_size):
+                    data[f"gpu/utilization/rank_{r}"] = metrics[r, 0].item()
+                    data[f"gpu/memory_allocated/rank_{r}"] = metrics[r, 1].item()
+                    data[f"gpu/memory_reserved/rank_{r}"] = metrics[r, 2].item()
+                    data[f"gpu/memory_peak/rank_{r}"] = metrics[r, 3].item()
+            else:
+                data[f"gpu/utilization/global"] = metrics[0, 0].item()
+                data[f"gpu/memory_allocated/global"] = metrics[0, 1].item()
+                data[f"gpu/memory_reserved/global"] = metrics[0, 2].item()
+                data[f"gpu/memory_peak/global"] = metrics[0, 3].item()
 
             self._run.log(data=data, step=micro_step)
 
@@ -236,12 +242,12 @@ class TrainingMonitor:
         if self._run is not None and rank == 0:
             data = {}
             # local TPS
-            for r, tps in enumerate(gathered_tps):
-                data[f"{phase}/TPS/rank_{r}"] = tps.item()
+            if self._is_ddp:
+                for r, tps in enumerate(gathered_tps):
+                    data[f"{phase}/TPS/rank_{r}"] = tps.item()
 
             # global TPS
-            if self._is_ddp:
-                data[f"{phase}/TPS/global"] = (tokens_tensor / duration_tensor).item()
+            data[f"{phase}/TPS/global"] = (tokens_tensor / duration_tensor).item()
             self._run.log(data=data, step=micro_step)
 
         if flag and rank == 0:
