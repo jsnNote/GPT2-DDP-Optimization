@@ -163,6 +163,8 @@ class GPT2_RoPE(nn.Module):
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
             nn.init.normal_(module.weight, mean=0.0, std=self.initializer_range)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             nn.init.normal_(module.weight, mean=0.0, std=self.initializer_range)
         elif isinstance(module, nn.LayerNorm):
