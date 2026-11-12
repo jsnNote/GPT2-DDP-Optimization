@@ -15,6 +15,7 @@ import numpy as np
 from contextlib import nullcontext
 from tqdm import tqdm
 import wandb
+from transformers import get_cosine_schedule_with_warmup
 
 
 def set_seed(seed):
@@ -125,6 +126,11 @@ micro_steps = optimizer_steps * accumulation_steps
 model.train()
 optimizer.zero_grad(set_to_none=True)
 
+# Learning Rate Scheduler + Warmup
+scheduler = get_cosine_schedule_with_warmup(
+    optimizer, num_warpup_steps=int(micro_steps * 0.1), num_training_steps=micro_steps
+)
+
 train_loss_sum = 0.0
 optimizer_step = 0
 epoch = 0
@@ -206,6 +212,7 @@ for step in progress:
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
         scaler.step(optimizer)
         scaler.update()
+        scheduler.step()
         optimizer.zero_grad(set_to_none=True)
         optimizer_step += 1
 
