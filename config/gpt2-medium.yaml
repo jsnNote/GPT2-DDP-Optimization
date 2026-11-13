@@ -17,6 +17,7 @@ train:
   weight_decay: 0.1
   grad_clip: 1.0
   eval_interval: 100
+  ckpt_interval: 100
 
 data:
   train_path: ./data/train.bin

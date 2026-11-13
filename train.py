@@ -1,7 +1,11 @@
 from data import get_dataloader
-from utils.load import load_yaml
-from utils.parse_arg import parse_argument
-from utils.training_monitor import TrainingMonitor
+from utils import (
+    load_yaml,
+    parse_argument,
+    TrainingMonitor,
+    save_checkpoint,
+    load_checkpoint,
+)
 from model import GPT2_RoPE
 import torch
 import torch.optim as optim
@@ -16,6 +20,7 @@ from contextlib import nullcontext
 from tqdm import tqdm
 import wandb
 from transformers import get_cosine_schedule_with_warmup
+from datetime import datetime
 
 
 def set_seed(seed):
@@ -80,7 +85,6 @@ dropout_rate = base_config["train"]["dropout_rate"]
 _, flag = parse_argument("--flag")
 _, enable_compile = parse_argument("--enable-compile")
 
-
 # 실험 파라미터 설정
 optimizer_steps = experiment_config["optimizer_steps"]
 accumulation_steps = experiment_config["gradient_accumulation_steps"]
@@ -122,6 +126,7 @@ loss_fn = nn.CrossEntropyLoss()
 train_losses = []
 val_losses = []
 eval_interval = base_config["train"]["eval_interval"]
+ckpt_interval = base_config["train"]["ckpt_interval"]
 micro_steps = optimizer_steps * accumulation_steps
 model.train()
 optimizer.zero_grad(set_to_none=True)
@@ -134,10 +139,7 @@ scheduler = get_cosine_schedule_with_warmup(
 train_loss_sum = 0.0
 optimizer_step = 0
 epoch = 0
-if train_sampler is not None:
-    train_sampler.set_epoch(epoch)
 
-train_iter = iter(train_dataloader)
 
 if wandb_log and rank == 0:
     run = wandb.init(
@@ -165,14 +167,48 @@ scaler = torch.amp.GradScaler(
 )
 token_count = 0
 monitor.start_throughput()
+start_step = 1
+batch_idx = 0
+num_batch = len(train_dataloader)
+
+# 체크포인트 불러오기
+_, resume_chkpt = parse_argument("--resume-from-checkpoint")
+if resume_chkpt:
+    checkpoint = load_checkpoint()
+    if checkpoint is not None:
+        model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        scaler.load_state_dict(checkpoint["scaler"])
+        scheduler.load_state_dict(checkpoint["scheduler"])
+
+        training_state = checkpoint["training_state"]
+        start_step = training_state["start_step"]
+        optimizer_step = training_state["optimizer_step"]
+        micro_steps = training_state["micro_steps"]
+        batch_idx = training_state["batch_idx"]
+        epoch = training_state["epoch"]
+
+
+if train_sampler is not None:
+    train_sampler.set_epoch(epoch)
+
+train_iter = iter(train_dataloader)
+
+# 데이터 로더 복원
+if resume_chkpt and checkpoint is not None:
+    for _ in range(batch_idx):
+        next(train_iter)
+
+
 progress = (
-    tqdm(range(1, (micro_steps + 1)), desc="진행률: ")
+    tqdm(range(start_step, (micro_steps + 1)), desc="진행률: ")
     if rank == 0
-    else range(1, (micro_steps + 1))
+    else range(start_step, (micro_steps + 1))
 )
 for step in progress:
     try:
         x_batch, y_batch = next(train_iter)
+        batch_idx += 1
     except StopIteration as e:
         # epoch이 끝났을 때 데이터를 균등하게 나누기 위해서 sampler를 다시 설정해야 함.
         epoch += 1
@@ -180,6 +216,7 @@ for step in progress:
             train_sampler.set_epoch(epoch)
         train_iter = iter(train_dataloader)
         x_batch, y_batch = next(train_iter)
+        batch_idx = 1
 
     update_now = step % accumulation_steps == 0
     # ddp인데 optimizer_step이 아니면 동기화하지 않음. optimizer_step이면 각 GPU에서 계산한 gradient를 통신해 평균내고, 모든 GPU가 같은 gradient를 갖도록 동기화하는 것
@@ -250,6 +287,28 @@ for step in progress:
                 micro_step=step,
                 flag=flag,
             )
+            if optimizer_step % ckpt_interval == 0:
+                checkpoint = {
+                    "model": (
+                        model.module.state_dict() if is_ddp else model.state_dict()
+                    ),
+                    "optimizer": optimizer.state_dict(),
+                    "scaler": scaler.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "training_state": {
+                        "micro_steps": micro_steps,
+                        "start_step": (step + 1),
+                        "optimizer_step": optimizer_step,
+                        "epoch": epoch,
+                        "batch_idx": batch_idx,
+                    },
+                    "sampler_config": {
+                        "name": f"gpt2_{datetime.now().strtime('%Y%m%d')}_step{step}",
+                        "base_config": base_config,
+                        "experiemnt_config": experiment_config,
+                    },
+                }
+                save_checkpoint()
         train_loss_sum = 0.0
 
         if optimizer_step % eval_interval == 0:
