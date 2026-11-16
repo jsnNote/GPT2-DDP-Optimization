@@ -133,7 +133,9 @@ optimizer.zero_grad(set_to_none=True)
 
 # Learning Rate Scheduler + Warmup
 scheduler = get_cosine_schedule_with_warmup(
-    optimizer, num_warmup_steps=int(micro_steps * 0.1), num_training_steps=micro_steps
+    optimizer,
+    num_warmup_steps=int(optimizer_steps * 0.1),
+    num_training_steps=optimizer_steps,
 )
 
 train_loss_sum = 0.0
