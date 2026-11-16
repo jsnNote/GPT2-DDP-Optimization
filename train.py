@@ -133,7 +133,7 @@ optimizer.zero_grad(set_to_none=True)
 
 # Learning Rate Scheduler + Warmup
 scheduler = get_cosine_schedule_with_warmup(
-    optimizer, num_warpup_steps=int(micro_steps * 0.1), num_training_steps=micro_steps
+    optimizer, num_warmup_steps=int(micro_steps * 0.1), num_training_steps=micro_steps
 )
 
 train_loss_sum = 0.0
@@ -303,12 +303,12 @@ for step in progress:
                         "batch_idx": batch_idx,
                     },
                     "sampler_config": {
-                        "name": f"gpt2_{datetime.now().strtime('%Y%m%d')}_step{step}",
+                        "name": f"gpt2_{datetime.now().strftime('%Y%m%d')}_step{step}",
                         "base_config": base_config,
                         "experiemnt_config": experiment_config,
                     },
                 }
-                save_checkpoint()
+                save_checkpoint(checkpoint)
         train_loss_sum = 0.0
 
         if optimizer_step % eval_interval == 0:
@@ -351,11 +351,11 @@ for step in progress:
                 monitor.log_perplexity(**parameters, stage="calculate perplexity")
             model.train()
         monitor.start_throughput()
-        if run is not None and rank:
+        if run is not None and rank == 0:
             run.log({}, step=step, commit=True)
 
 
 if is_ddp:
     dist.destroy_process_group()
-if run is not None and rank:
+if run is not None and rank == 0:
     run.finish()
