@@ -178,7 +178,10 @@ _, resume_chkpt = parse_argument("--resume-from-checkpoint")
 if resume_chkpt:
     checkpoint = load_checkpoint()
     if checkpoint is not None:
-        model.load_state_dict(checkpoint["model"])
+        if is_ddp:
+            model.module.load_state_dict(checkpoint["model"])
+        else:
+            model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         scaler.load_state_dict(checkpoint["scaler"])
         scheduler.load_state_dict(checkpoint["scheduler"])
