@@ -293,28 +293,27 @@ for step in progress:
                 flag=flag,
             )
             if optimizer_step % ckpt_interval == 0:
-                if rank == 0:
-                    checkpoint = {
-                        "model": (
-                            model.module.state_dict() if is_ddp else model.state_dict()
-                        ),
-                        "optimizer": optimizer.state_dict(),
-                        "scaler": scaler.state_dict(),
-                        "scheduler": scheduler.state_dict(),
-                        "training_state": {
-                            "micro_steps": micro_steps,
-                            "start_step": (step + 1),
-                            "optimizer_step": optimizer_step,
-                            "epoch": epoch,
-                            "batch_idx": batch_idx,
-                        },
-                        "sampler_config": {
-                            "name": f"gpt2_{datetime.now().strftime('%Y%m%d')}_step{step}",
-                            "base_config": base_config,
-                            "experiemnt_config": experiment_config,
-                        },
-                    }
-                    save_checkpoint(checkpoint)
+                checkpoint = {
+                    "model": (
+                        model.module.state_dict() if is_ddp else model.state_dict()
+                    ),
+                    "optimizer": optimizer.state_dict(),
+                    "scaler": scaler.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "training_state": {
+                        "micro_steps": micro_steps,
+                        "start_step": (step + 1),
+                        "optimizer_step": optimizer_step,
+                        "epoch": epoch,
+                        "batch_idx": batch_idx,
+                    },
+                    "sampler_config": {
+                        "name": f"gpt2_{datetime.now().strftime('%Y%m%d')}_step{step}",
+                        "base_config": base_config,
+                        "experiemnt_config": experiment_config,
+                    },
+                }
+                save_checkpoint(checkpoint)
         train_loss_sum = 0.0
 
         if optimizer_step % eval_interval == 0:
