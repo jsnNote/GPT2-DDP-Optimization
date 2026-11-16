@@ -2,7 +2,7 @@ import os
 import torch
 
 parent_path = os.path.dirname(os.path.dirname(__file__))
-checkpoint_path = os.path.join(parent_path, "model", "checkpoint")
+checkpoint_path = os.path.join(parent_path, "model", "checkpoints")
 latest_path = os.path.join(checkpoint_path, "latest.pt")
 
 
